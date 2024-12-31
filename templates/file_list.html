@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File List</title>
+</head>
+<body>
+    <h1>File List</h1>
+
+    <table border="1">
+        <thead>
+            <tr>
+                <th>File Name</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td>{{ file }}</td>
+                <td><button onclick="downloadFile('{{ file }}')">Download</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div>
+        <button {% if page <= 1 %}disabled{% endif %} onclick="window.location.href='/?page={{ page - 1 }}&per_page={{ request.query_params.per_page or 10 }}'">Previous</button>
+        <button {% if page >= total_pages %}disabled{% endif %} onclick="window.location.href='/?page={{ page + 1 }}&per_page={{ request.query_params.per_page or 10 }}'">Next</button>
+    </div>
+
+    <p>Page {{ page }} of {{ total_pages }}</p>
+
+    <script>
+        async function downloadFile(fileName, numChunks = 4) {
+            const url = `/files/${fileName}`;
+            const response = await fetch(url, { method: 'HEAD' });
+            const fileSize = parseInt(response.headers.get('Content-Length'), 10);
+
+            if (!fileSize) {
+                alert('Unable to fetch file size. Check server configuration.');
+                return;
+            }
+
+            const chunkSize = Math.ceil(fileSize / numChunks);
+            const promises = [];
+
+            for (let i = 0; i < numChunks; i++) {
+                const start = i * chunkSize;
+                const end = i === numChunks - 1 ? fileSize - 1 : (i + 1) * chunkSize - 1;
+
+                promises.push(
+                    fetch(url, {
+                        headers: {
+                            Range: `bytes=${start}-${end}`,
+                        },
+                    }).then((res) => {
+                        if (!res.ok && res.status !== 206) {
+                            throw new Error(`Failed to fetch chunk: ${start}-${end}`);
+                        }
+                        return res.arrayBuffer();
+                    })
+                );
+            }
+
+            try {
+                const chunks = await Promise.all(promises);
+                const blob = new Blob(chunks);
+                const downloadUrl = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = fileName.split('/').pop();
+                document.body.appendChild(a);
+                a.click();
+                URL.revokeObjectURL(downloadUrl);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Download failed:', error);
+                alert('Download failed. Check the console for details.');
+            }
+        }
+    </script>
+</body>
+</html>
